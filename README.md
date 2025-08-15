@@ -32,3 +32,6 @@ Lightweight REST API to manage products for an e-commerce backend built with Nod
 - description: string
 - inStock: boolean
 - createdAt: date
+
+demo link
+https://www.awesomescreenshot.com/video/43175847?key=f9d698009151a8afd409fd68986e5795
