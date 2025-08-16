@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ecommerce Frontend</title>
+    <style>
+      :root{
+        --bg:#f7fafc;
+        --card:#ffffff;
+        --muted:#6b7280;
+        --primary:#2563eb;
+        --primary-hover:#1e40af;
+        --accent:#f59e0b;
+        --danger:#dc2626;
+        --border:#e6e9ee;
+        --radius:8px;
+      }
+
+      html,body{height:100%}
+      body {
+        font-family: Inter, Arial, sans-serif;
+        background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+        margin: 0;
+        padding: 24px;
+        color: #0f172a;
+      }
+
+      .container{
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+
+      header{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        margin-bottom:18px;
+      }
+      header h1{margin:0;font-size:22px;}
+
+      .card{
+        background:var(--card);
+        border:1px solid var(--border);
+        border-radius:var(--radius);
+        padding:16px;
+        box-shadow: 0 6px 18px rgba(15,23,42,0.06);
+        margin-bottom:16px;
+      }
+
+      form{display:block;}
+      .form-grid{
+        display: grid;
+        grid-template-columns: 1fr 220px;
+        gap:12px;
+        align-items:start;
+      }
+
+      .input, .textarea {
+        width:100%;
+        padding:10px 12px;
+        border:1px solid var(--border);
+        border-radius:6px;
+        font-size:14px;
+        box-sizing:border-box;
+        background:#fff;
+      }
+
+      .textarea{min-height:96px; resize:vertical; }
+
+      label.checkbox{
+        display:inline-flex;
+        align-items:center;
+        gap:8px;
+        color:var(--muted);
+        font-size:14px;
+      }
+
+      .form-actions{
+        margin-top:12px;
+        display:flex;
+        gap:8px;
+        align-items:center;
+      }
+
+      .btn{
+        padding:8px 12px;
+        border-radius:6px;
+        border: none;
+        cursor:pointer;
+        font-weight:600;
+        font-size:14px;
+        transition: transform .06s ease, box-shadow .12s ease;
+      }
+      .btn:active{transform: translateY(1px);}
+      .btn-primary{ background:var(--primary); color:white; box-shadow: 0 6px 18px rgba(37,99,235,0.14); }
+      .btn-primary:hover{ background:var(--primary-hover); }
+      .btn-edit{ background:var(--accent); color:#08122c; }
+      .btn-edit:hover{ filter:brightness(.95); }
+      .btn-danger{ background:var(--danger); color:white; }
+      .btn-cancel{ background:transparent; color:var(--muted); border:1px solid var(--border); }
+
+      /* table */
+      .table-wrap{ overflow:auto; }
+      table{
+        width:100%;
+        border-collapse:collapse;
+        margin-top:12px;
+        background:transparent;
+      }
+      th, td{
+        text-align:left;
+        padding:12px;
+        border-bottom:1px solid var(--border);
+        font-size:14px;
+      }
+      th{ color:var(--muted); font-weight:600; background:transparent; }
+      tr:hover td{ background:#fbfdff; }
+
+      .actions{ display:flex; gap:8px; }
+
+      /* responsive */
+      @media (max-width:720px){
+        .form-grid{ grid-template-columns: 1fr; }
+        .form-actions{ flex-direction:column; align-items:stretch; }
+        .btn{ width:100%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Products</h1>
+      </header>
+
+      <div class="card" id="root">
+        <!-- React mounts here -->
+      </div>
+
+      <div class="card table-wrap" id="table-card">
+        <!-- Table will be rendered by React -->
+      </div>
+    </div>
+
+    <!-- React UMD -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel for in-browser JSX (dev only) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+      const { useState, useEffect } = React;
+      const API_BASE = 'http://localhost:3000';
+
+      async function api(path, opts = {}) {
+        const url = API_BASE + path;
+        try {
+          const res = await fetch(url, { mode: 'cors', ...opts });
+          if (!res.ok) {
+            let body = null;
+            try { body = await res.json(); } catch (e) {}
+            const msg = (body && body.message) ? body.message : res.statusText;
+            throw new Error(msg || `HTTP ${res.status}`);
+          }
+          if (res.status === 204) return null;
+          try { return await res.json(); } catch (e) { return null; }
+        } catch (err) {
+          if (err instanceof TypeError && err.message === 'Failed to fetch') {
+            throw new Error('Failed to fetch — check backend is running and CORS is enabled (backend must allow requests from this page).');
+          }
+          throw err;
+        }
+      }
+
+      const fetchProducts = () => api('/products');
+      const createProduct = (data) => api('/products', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+      const updateProduct = (id, data) => api('/products/' + id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+      const deleteProduct = (id) => api('/products/' + id, { method: 'DELETE' });
+
+      function App(){
+        const [products, setProducts] = useState([]);
+        const [form, setForm] = useState({ name: '', price: '', description: '', inStock: true });
+        const [editingId, setEditingId] = useState(null);
+        const [loading, setLoading] = useState(false);
+
+        const load = async () => {
+          setLoading(true);
+          try {
+            const data = await fetchProducts();
+            setProducts(Array.isArray(data) ? data : []);
+          } catch (e) {
+            alert('Request failed: ' + e.message);
+            console.error(e);
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        useEffect(() => { load(); }, []);
+
+        const onSubmit = async (e) => {
+          e.preventDefault();
+          const payload = { name: form.name.trim(), price: Number(form.price), description: form.description, inStock: !!form.inStock };
+          try {
+            if (editingId) await updateProduct(editingId, payload);
+            else await createProduct(payload);
+            setForm({ name: '', price: '', description: '', inStock: true });
+            setEditingId(null);
+            await load();
+          } catch (err) {
+            alert('Request failed: ' + err.message);
+            console.error(err);
+          }
+        };
+
+        const onEdit = (p) => {
+          setEditingId(p._id);
+          setForm({ name: p.name || '', price: p.price ?? '', description: p.description || '', inStock: !!p.inStock });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        const onDelete = async (id) => {
+          if (!confirm('Delete product?')) return;
+          try { await deleteProduct(id); await load(); }
+          catch (e) { alert('Delete failed: ' + e.message); console.error(e); }
+        };
+
+        return (
+          <>
+            <form onSubmit={onSubmit} className="card" style={{marginBottom:12}}>
+              <div className="form-grid">
+                <input className="input" placeholder="Name" value={form.name} onChange={(e)=>setForm({...form, name:e.target.value})} required />
+                <input className="input" type="number" step="0.01" placeholder="Price" value={form.price} onChange={(e)=>setForm({...form, price:e.target.value})} required />
+              </div>
+
+              <div style={{marginTop:12}}>
+                <textarea className="textarea" placeholder="Description" value={form.description} onChange={(e)=>setForm({...form, description:e.target.value})}></textarea>
+              </div>
+
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:12, flexWrap:'wrap', gap:10}}>
+                <label className="checkbox">
+                  <input type="checkbox" checked={form.inStock} onChange={(e)=>setForm({...form, inStock:e.target.checked})} /> In stock
+                </label>
+
+                <div className="form-actions" style={{marginLeft:'auto'}}>
+                  <button className="btn btn-primary" type="submit">{editingId ? 'Update' : 'Create'}</button>
+                  {editingId && <button type="button" className="btn btn-cancel" onClick={()=>{ setEditingId(null); setForm({ name:'', price:'', description:'', inStock:true }); }}>Cancel</button>}
+                </div>
+              </div>
+            </form>
+
+            <div className="card table-wrap">
+              {loading ? <p>Loading...</p> : (
+                <table>
+                  <thead><tr><th>Name</th><th style={{width:110}}>Price</th><th>Description</th><th style={{width:100}}>In Stock</th><th style={{width:150}}>Actions</th></tr></thead>
+                  <tbody>
+                    {products.map(p => (
+                      <tr key={p._id}>
+                        <td>{p.name}</td>
+                        <td>{p.price}</td>
+                        <td>{p.description}</td>
+                        <td>{p.inStock ? 'Yes' : 'No'}</td>
+                        <td>
+                          <div className="actions">
+                            <button className="btn btn-edit" onClick={()=>onEdit(p)}>Edit</button>
+                            <button className="btn btn-danger" onClick={()=>onDelete(p._id)}>Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+  </body>
+</html>
