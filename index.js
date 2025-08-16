@@ -2,75 +2,66 @@ require('dotenv').config();
 
 const express = require('express');
 const mongoose = require('mongoose');
-const config = require('./src/config/db');
-const router = require('./src/router/route');
+const cors = require('cors');
+const config = require('./src/config/db'); // adjust path if different
+const router = require('./src/router/route'); // or './src/router/index'
 const errorHandler = require('./src/middleware/errorHandler');
 
-const { DB_URI } = config;
-let PORT = parseInt(config.PORT, 10) || 3000;
-const MAX_PORT_RETRIES = 5;
+console.log('index.js loaded, env injected'); // <- diagnostic log
 
-if (!DB_URI || typeof DB_URI !== 'string') {
+// Helper: normalize a raw port string -> integer port
+function normalizePort(raw) {
+    if (raw === undefined || raw === null) return 3000;
+    // remove non-digit characters then parse
+    const cleaned = String(raw).trim().replace(/[^\d]/g, '');
+    const n = parseInt(cleaned, 10);
+    return Number.isFinite(n) && n > 0 ? n : 3000;
+}
+
+// Helper: sanitize DB URI (remove wrapping quotes and trailing commas/spaces)
+function sanitizeDbUri(raw) {
+    if (!raw) return '';
+    return String(raw).trim().replace(/^["']+|["',\s]+$/g, '');
+}
+
+// read raw env values (dotenv already loaded)
+const rawPort = process.env.PORT || process.env.APP_PORT || process.env.PORT_NUMBER;
+const rawDb = process.env.DB_URI || process.env.MONGODB_URI || '';
+
+// sanitize
+const PORT = normalizePort(rawPort);
+const DB_URI = sanitizeDbUri(rawDb);
+
+console.log('Starting app - DB_URI:', DB_URI ? DB_URI : '(empty)', 'PORT:', PORT);
+
+if (!DB_URI) {
     console.error('Database connection error: DB_URI is not defined or not a string.');
-    console.error('Set DB_URI in environment or src/config/index.js and restart.');
+    console.error('Fix .env (no wrapping quotes or trailing commas). Example: DB_URI=mongodb://localhost:27017/ecommerce');
     process.exit(1);
-}
-
-async function connectDb() {
-    try {
-        await mongoose.connect(DB_URI, { useNewUrlParser: true, useUnifiedTopology: true });
-        console.log('Connected to MongoDB');
-    } catch (err) {
-        console.error('Database connection error:', err);
-        process.exit(1);
-    }
-}
-
-function createApp() {
-    const app = express();
-    app.use(express.json());
-    app.use('/', router);
-    if (errorHandler && typeof errorHandler === 'function') app.use(errorHandler);
-    return app;
-}
-
-function tryListen(app, port, attemptsLeft) {
-    const server = app.listen(port);
-    server.on('listening', () => {
-        console.log(`Server running on port ${port}`);
-    });
-    server.on('error', (err) => {
-        if (err && (err.code === 'EACCES' || err.code === 'EADDRINUSE')) {
-            console.warn(`Port ${port} unavailable (${err.code}).`);
-            if (attemptsLeft > 0) {
-                const nextPort = port + 1;
-                console.warn(`Trying port ${nextPort} (${attemptsLeft - 1} retries left)...`);
-                setTimeout(() => tryListen(app, nextPort, attemptsLeft - 1), 300);
-                return;
-            }
-            console.error(`Failed to bind a port after retries. Resolve permission/port conflict or pick a different PORT.`);
-            console.error('On Windows: run `netstat -ano | findstr :3000` to find PID, then `taskkill /PID <pid> /F` to stop it.');
-            process.exit(1);
-        }
-        console.error('Server error:', err);
-        process.exit(1);
-    });
 }
 
 async function start() {
-    await connectDb();
-    const app = createApp();
-    tryListen(app, PORT, MAX_PORT_RETRIES);
-}
+    try {
+        await mongoose.connect(DB_URI, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+            serverSelectionTimeoutMS: 5000
+        });
+        console.log('Connected to MongoDB');
+    } catch (err) {
+        console.error('Database connection error:', err.message || err);
+        process.exit(1);
+    }
 
-// Global handlers for cleaner shutdown on fatal errors
-process.on('unhandledRejection', (reason) => {
-    console.error('Unhandled Rejection:', reason);
-    process.exit(1);
-});
-process.on('uncaughtException', (err) => {
-    console.error('Uncaught Exception:', err);
-    process.exit(1);
-});
+    const app = express();
+    app.use(express.json());
+    app.use(cors());
+    app.use('/', router);
+    if (errorHandler && typeof errorHandler === 'function') app.use(errorHandler);
+
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+}
 
 start();
